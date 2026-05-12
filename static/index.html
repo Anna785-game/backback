@@ -4,15 +4,8 @@
 <head>
 
     <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <title>
-        GPS Tracker Simulator
-    </title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Tracker Real</title>
 
     <style>
 
@@ -63,11 +56,6 @@
             color: white;
         }
 
-        .deviation-btn {
-            background: #ff9800;
-            color: white;
-        }
-
         .status {
             font-weight: bold;
             margin-top: 10px;
@@ -83,503 +71,192 @@
             font-family: monospace;
         }
 
-        .slider-container {
-            margin-top: 15px;
-        }
-
     </style>
 
 </head>
 
 <body>
 
-    <h1>
-        GPS Tracker Simulator
-    </h1>
+<h1>GPS Tracker REAL</h1>
 
-    <div class="card">
+<div class="card">
 
-        <h2>
-            Coordonnées Point A
-        </h2>
+    <h2>Route (optionnel pour test déviation)</h2>
 
-        <input
-            id="startLat"
-            type="number"
-            step="any"
-            placeholder="Latitude A"
-            value="-18.8792"
-        >
+    <input id="startLat" type="number" step="any" placeholder="Lat A" value="-18.8792">
+    <input id="startLon" type="number" step="any" placeholder="Lon A" value="47.5079">
 
-        <input
-            id="startLon"
-            type="number"
-            step="any"
-            placeholder="Longitude A"
-            value="47.5079"
-        >
+    <input id="endLat" type="number" step="any" placeholder="Lat B" value="-18.8850">
+    <input id="endLon" type="number" step="any" placeholder="Lon B" value="47.5150">
 
-        <h2>
-            Coordonnées Point B
-        </h2>
+    <br><br>
 
-        <input
-            id="endLat"
-            type="number"
-            step="any"
-            placeholder="Latitude B"
-            value="-18.8850"
-        >
+    <button class="create-btn" onclick="createRoute()">
+        Créer Route
+    </button>
 
-        <input
-            id="endLon"
-            type="number"
-            step="any"
-            placeholder="Longitude B"
-            value="47.5150"
-        >
+    <button class="start-btn" onclick="startGPS()">
+        START GPS RÉEL
+    </button>
 
-        <br><br>
+    <button class="stop-btn" onclick="stopGPS()">
+        STOP
+    </button>
 
-        <button
-            class="create-btn"
-            onclick="createRoute()"
-        >
-            Créer Trajet
-        </button>
-
-        <button
-            class="start-btn"
-            onclick="startSimulation()"
-        >
-            Démarrer
-        </button>
-
-        <button
-            class="stop-btn"
-            onclick="stopSimulation()"
-        >
-            Stop
-        </button>
-
-        <button
-            class="deviation-btn"
-            onclick="simulateDeviation()"
-        >
-            Déviation
-        </button>
-
-        <div class="slider-container">
-
-            <label>
-                Vitesse simulation :
-            </label>
-
-            <input
-                type="range"
-                min="200"
-                max="3000"
-                value="1000"
-                id="speedSlider"
-            >
-
-            <span id="speedValue">
-                1000 ms
-            </span>
-
-        </div>
-
-        <div class="status" id="status">
-            Statut : En attente
-        </div>
-
+    <div class="status" id="status">
+        Statut : idle
     </div>
 
-    <div class="card">
+</div>
 
-        <h2>
-            Logs
-        </h2>
+<div class="card">
 
-        <div id="logs"></div>
+    <h2>Logs</h2>
+    <div id="logs"></div>
 
-    </div>
+</div>
 
 <script>
 
-let generatedRoute = []
+let routeId = null;
+let sessionId = null;
+let watchId = null;
+let isTracking = false;
 
-let routeId = null
-let sessionId = null
+// ---------------- LOGS ----------------
 
-let currentIndex = 0
-
-let interval = null
-
-let deviationMode = false
-let deviationTriggered = false
-
-// =====================================================
-// LOGS
-// =====================================================
-
-function log(message) {
-
-    const logs =
-        document.getElementById("logs")
-
-    logs.innerHTML += `
-        <div>
-            ${new Date().toLocaleTimeString()}
-            :
-            ${message}
-        </div>
-    `
-
-    logs.scrollTop = logs.scrollHeight
+function log(msg) {
+    const logs = document.getElementById("logs");
+    logs.innerHTML += `<div>${new Date().toLocaleTimeString()} : ${msg}</div>`;
+    logs.scrollTop = logs.scrollHeight;
 }
 
-// =====================================================
-// STATUS
-// =====================================================
-
-function setStatus(text) {
-
-    document.getElementById(
-        "status"
-    ).innerText =
-        "Statut : " + text
+function setStatus(s) {
+    document.getElementById("status").innerText = "Statut : " + s;
 }
 
-// =====================================================
-// SPEED
-// =====================================================
+// ---------------- ROUTE ----------------
 
-const speedSlider =
-    document.getElementById("speedSlider")
+function generateRoute(startLat, startLon, endLat, endLon, steps = 30) {
 
-speedSlider.addEventListener("input", () => {
+    let points = [];
 
-    document.getElementById(
-        "speedValue"
-    ).innerText =
-        speedSlider.value + " ms"
-})
+    for (let i = 0; i <= steps; i++) {
 
-// =====================================================
-// GENERATION ROUTE
-// =====================================================
-
-function generateRoute(
-    startLat,
-    startLon,
-    endLat,
-    endLon,
-    steps = 40
-) {
-
-    let points = []
-
-    for(let i = 0; i <= steps; i++) {
-
-        const ratio = i / steps
-
-        const lat =
-            startLat +
-            (endLat - startLat) * ratio
-
-        const lon =
-            startLon +
-            (endLon - startLon) * ratio
+        const t = i / steps;
 
         points.push({
-            latitude: lat,
-            longitude: lon
-        })
+            latitude: startLat + (endLat - startLat) * t,
+            longitude: startLon + (endLon - startLon) * t
+        });
     }
 
-    return points
+    return points;
 }
-
-// =====================================================
-// CREATION ROUTE
-// =====================================================
 
 async function createRoute() {
 
-    const startLat =
-        parseFloat(
-            document.getElementById(
-                "startLat"
-            ).value
-        )
+    const startLat = parseFloat(document.getElementById("startLat").value);
+    const startLon = parseFloat(document.getElementById("startLon").value);
+    const endLat = parseFloat(document.getElementById("endLat").value);
+    const endLon = parseFloat(document.getElementById("endLon").value);
 
-    const startLon =
-        parseFloat(
-            document.getElementById(
-                "startLon"
-            ).value
-        )
+    const route = generateRoute(startLat, startLon, endLat, endLon);
 
-    const endLat =
-        parseFloat(
-            document.getElementById(
-                "endLat"
-            ).value
-        )
+    const res = await fetch("/routes/create", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            user_id: "anna",
+            route_name: "test route",
+            points: route
+        })
+    });
 
-    const endLon =
-        parseFloat(
-            document.getElementById(
-                "endLon"
-            ).value
-        )
+    const data = await res.json();
 
-    generatedRoute = generateRoute(
-        startLat,
-        startLon,
-        endLat,
-        endLon
-    )
+    routeId = data.route_id;
 
-    log(
-        "Route générée avec " +
-        generatedRoute.length +
-        " points"
-    )
+    log("Route créée");
+    setStatus("route OK");
+}
 
-    const response = await fetch(
-        "/routes/create",
+// ---------------- GPS RÉEL ----------------
+
+async function startGPS() {
+
+    if (!routeId) {
+        log("Crée une route d'abord");
+        return;
+    }
+
+    const res = await fetch(`/tracking/start/${routeId}`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            user_id: "anna",
+            latitude: 0,
+            longitude: 0
+        })
+    });
+
+    const data = await res.json();
+
+    sessionId = data.session_id;
+    isTracking = true;
+
+    log("GPS START");
+    setStatus("tracking live");
+
+    watchId = navigator.geolocation.watchPosition(
+        sendGPS,
+        err => log("GPS error: " + err.message),
         {
-            method: "POST",
-
-            headers: {
-                "Content-Type":
-                    "application/json"
-            },
-
-            body: JSON.stringify({
-
-                user_id: "anna",
-
-                route_name:
-                    "Maison -> Université",
-
-                points:
-                    generatedRoute
-            })
+            enableHighAccuracy: true,
+            maximumAge: 1000,
+            timeout: 5000
         }
-    )
-
-    const data = await response.json()
-
-    console.log(data)
-
-    routeId = data.route_id
-
-    log("Route ID : " + routeId)
-
-    setStatus("Trajet créé")
+    );
 }
 
-// =====================================================
-// DEMARRAGE SIMULATION
-// =====================================================
+async function sendGPS(position) {
 
-async function startSimulation() {
+    if (!isTracking) return;
 
-    if(!routeId) {
+    const lat = position.coords.latitude;
+    const lon = position.coords.longitude;
 
-        log("Crée un trajet d'abord")
+    const res = await fetch(`/tracking/update/${sessionId}`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            user_id: "anna",
+            latitude: lat,
+            longitude: lon
+        })
+    });
 
-        return
+    const data = await res.json();
+
+    log(`GPS: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
+    log(`Distance: ${data.distance_from_route} m`);
+
+    if (data.alert) {
+        log("🚨 " + data.alert);
+        setStatus("ALERTE");
     }
-
-    currentIndex = 0
-
-    deviationMode = false
-    deviationTriggered = false
-
-    const firstPoint =
-        generatedRoute[0]
-
-    const response = await fetch(
-        `/tracking/start/${routeId}`,
-        {
-            method: "POST",
-
-            headers: {
-                "Content-Type":
-                    "application/json"
-            },
-
-            body: JSON.stringify({
-
-                user_id: "anna",
-
-                latitude:
-                    firstPoint.latitude,
-
-                longitude:
-                    firstPoint.longitude
-            })
-        }
-    )
-
-    const data = await response.json()
-
-    console.log(data)
-
-    sessionId = data.session_id
-
-    log("Session créée")
-    log("Session ID : " + sessionId)
-
-    setStatus("Simulation active")
-
-    const speed =
-        parseInt(speedSlider.value)
-
-    interval = setInterval(
-        sendPosition,
-        speed
-    )
 }
 
-// =====================================================
-// ENVOI POSITION
-// =====================================================
+function stopGPS() {
 
-async function sendPosition() {
+    isTracking = false;
 
-    if(currentIndex >= generatedRoute.length) {
-
-        clearInterval(interval)
-
-        log("Trajet terminé")
-
-        setStatus("Trajet terminé")
-
-        return
+    if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
     }
 
-    let point =
-        generatedRoute[currentIndex]
-
-    // =================================================
-    // DEVIATION PROGRESSIVE
-    // =================================================
-
-    if(deviationMode) {
-
-        const deviationStrength =
-            currentIndex * 0.00015
-
-        point = {
-
-            latitude:
-                point.latitude +
-                deviationStrength,
-
-            longitude:
-                point.longitude +
-                deviationStrength
-        }
-    }
-
-    const response = await fetch(
-        `/tracking/update/${sessionId}`,
-        {
-            method: "POST",
-
-            headers: {
-                "Content-Type":
-                    "application/json"
-            },
-
-            body: JSON.stringify({
-
-                user_id: "anna",
-
-                latitude:
-                    point.latitude,
-
-                longitude:
-                    point.longitude
-            })
-        }
-    )
-
-    const data = await response.json()
-
-    console.log(data)
-
-    log(
-        `
-        GPS :
-        ${point.latitude.toFixed(6)},
-        ${point.longitude.toFixed(6)}
-        `
-    )
-
-    log(
-        `
-        Distance route :
-        ${data.distance_from_route} m
-        `
-    )
-
-    if(data.alert) {
-
-        log(
-            `
-            🚨 ${data.alert}
-            `
-        )
-
-        setStatus("ALERTE")
-    }
-
-    currentIndex++
-}
-
-// =====================================================
-// STOP
-// =====================================================
-
-function stopSimulation() {
-
-    clearInterval(interval)
-
-    setStatus("Simulation arrêtée")
-
-    log("Simulation stoppée")
-}
-
-// =====================================================
-// DEVIATION
-// =====================================================
-
-function simulateDeviation() {
-
-    if(deviationTriggered) {
-
-        log("Déviation déjà active")
-
-        return
-    }
-
-    deviationMode = true
-
-    deviationTriggered = true
-
-    log(
-        "🚨 DÉVIATION GPS ACTIVÉE"
-    )
-
-    setStatus(
-        "Déviation progressive active"
-    )
+    setStatus("stopped");
+    log("GPS STOP");
 }
 
 </script>
