@@ -46,6 +46,11 @@ button {
     font-weight: bold;
 }
 
+#timer {
+    font-size: 18px;
+    margin-top: 10px;
+}
+
 </style>
 </head>
 
@@ -55,13 +60,8 @@ button {
 
 <div class="card">
 
-<button class="start" onclick="startTracking()">
-    START
-</button>
-
-<button class="stop" onclick="stopTracking()">
-    STOP
-</button>
+<button class="start" onclick="startTracking()">START</button>
+<button class="stop" onclick="stopTracking()">STOP</button>
 
 <div class="status" id="status">Idle</div>
 <div id="timer">00:00</div>
@@ -75,13 +75,18 @@ button {
 
 <script>
 
-let sessionId = null;
 let watchId = null;
-let timerInterval = null;
-let startTime = null;
 let isRunning = false;
 
-// ---------------- LOGS ----------------
+let startPoint = null;
+let endPoint = null;
+
+let sessionId = null;
+
+let timerInterval = null;
+let startTime = null;
+
+// ================= LOGS =================
 
 function log(msg) {
     const logs = document.getElementById("logs");
@@ -93,7 +98,7 @@ function setStatus(s) {
     document.getElementById("status").innerText = s;
 }
 
-// ---------------- TIMER ----------------
+// ================= TIMER =================
 
 function startTimer() {
 
@@ -118,62 +123,72 @@ function stopTimer() {
     clearInterval(timerInterval);
 }
 
-// ---------------- START ----------------
+// ================= START =================
 
 async function startTracking() {
 
     if (isRunning) return;
 
-    setStatus("Starting GPS...");
+    setStatus("GPS activation...");
     log("START pressed");
 
-    const res = await fetch(
-        "https://backback-3-5xe2.onrender.com/routes/create",
-        {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-                user_id: "anna",
-                route_name: "LIVE TRACK",
-                points: []
-            })
-        }
-    );
+    navigator.geolocation.getCurrentPosition(async (pos) => {
 
-    const data = await res.json();
-    sessionId = data.route_id;
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
 
-    log("Session created: " + sessionId);
+        startPoint = { latitude: lat, longitude: lon };
 
-    await fetch(
-        `https://backback-3-5xe2.onrender.com/tracking/start/${sessionId}`,
-        {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-                user_id: "anna",
-                latitude: 0,
-                longitude: 0
-            })
-        }
-    );
+        log(`Point A enregistré: ${lat}, ${lon}`);
 
-    isRunning = true;
-    setStatus("Tracking LIVE");
+        const res = await fetch(
+            "https://backback-3-5xe2.onrender.com/routes/create",
+            {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    user_id: "anna",
+                    route_name: "LIVE ROUTE",
+                    points: []
+                })
+            }
+        );
 
-    startTimer();
+        const data = await res.json();
 
-    watchId = navigator.geolocation.watchPosition(
-        sendPosition,
-        err => log("GPS error: " + err.message),
-        {
-            enableHighAccuracy: true,
-            maximumAge: 1000
-        }
-    );
+        sessionId = data.route_id;
+
+        log("Session: " + sessionId);
+
+        await fetch(
+            `https://backback-3-5xe2.onrender.com/tracking/start/${sessionId}`,
+            {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    user_id: "anna",
+                    latitude: lat,
+                    longitude: lon
+                })
+            }
+        );
+
+        isRunning = true;
+
+        setStatus("Tracking LIVE");
+
+        startTimer();
+
+        watchId = navigator.geolocation.watchPosition(sendPosition, err =>
+            log("GPS error: " + err.message),
+            { enableHighAccuracy: true }
+        );
+
+    });
+
 }
 
-// ---------------- SEND POSITION ----------------
+// ================= SEND POSITION =================
 
 async function sendPosition(pos) {
 
@@ -198,28 +213,56 @@ async function sendPosition(pos) {
     const data = await res.json();
 
     log(`GPS ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
-    log(`Distance route: ${data.distance_from_route} m`);
+    log(`Distance: ${data.distance_from_route} m`);
 
     if (data.alert) {
         log("🚨 " + data.alert);
-        setStatus("ALERT");
+        setStatus("ALERTE");
     }
 }
 
-// ---------------- STOP ----------------
+// ================= STOP =================
 
 function stopTracking() {
 
+    if (!isRunning) return;
+
     isRunning = false;
 
-    if (watchId) {
-        navigator.geolocation.clearWatch(watchId);
-    }
+    navigator.geolocation.clearWatch(watchId);
 
     stopTimer();
 
     setStatus("Stopped");
+
     log("STOP pressed");
+
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+
+        endPoint = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude
+        };
+
+        log(`Point B enregistré: ${endPoint.latitude}, ${endPoint.longitude}`);
+
+        await fetch(
+            "https://backback-3-5xe2.onrender.com/routes/create",
+            {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    user_id: "anna",
+                    route_name: "REAL ROUTE",
+                    points: [startPoint, endPoint]
+                })
+            }
+        );
+
+        log("Route A → B sauvegardée");
+
+    });
+
 }
 
 </script>
