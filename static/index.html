@@ -2,126 +2,84 @@
 <html lang="fr">
 
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPS Tracker Live</title>
 
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPS Tracker Real</title>
+<style>
 
-    <style>
+body {
+    font-family: Arial;
+    padding: 20px;
+    background: #f5f5f5;
+}
 
-        body {
-            font-family: Arial, sans-serif;
-            padding: 20px;
-            background: #f5f5f5;
-        }
+.card {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
 
-        h1 {
-            margin-bottom: 10px;
-        }
+button {
+    padding: 10px 15px;
+    margin: 5px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
 
-        .card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
+.start { background: #2196F3; color: white; }
+.stop { background: #f44336; color: white; }
 
-        input {
-            width: 220px;
-            padding: 10px;
-            margin: 5px;
-        }
+#logs {
+    background: black;
+    color: #00ff00;
+    padding: 10px;
+    height: 300px;
+    overflow-y: auto;
+    font-family: monospace;
+}
 
-        button {
-            padding: 10px 15px;
-            margin: 5px;
-            cursor: pointer;
-            border: none;
-            border-radius: 5px;
-        }
+.status {
+    font-weight: bold;
+}
 
-        .create-btn {
-            background: #4CAF50;
-            color: white;
-        }
-
-        .start-btn {
-            background: #2196F3;
-            color: white;
-        }
-
-        .stop-btn {
-            background: #f44336;
-            color: white;
-        }
-
-        .status {
-            font-weight: bold;
-            margin-top: 10px;
-        }
-
-        #logs {
-            background: black;
-            color: #00ff00;
-            padding: 10px;
-            height: 350px;
-            overflow-y: auto;
-            border-radius: 10px;
-            font-family: monospace;
-        }
-
-    </style>
-
+</style>
 </head>
 
 <body>
 
-<h1>GPS Tracker REAL</h1>
+<h1>GPS Tracker LIVE</h1>
 
 <div class="card">
 
-    <h2>Route (optionnel pour test déviation)</h2>
+<button class="start" onclick="startTracking()">
+    START
+</button>
 
-    <input id="startLat" type="number" step="any" placeholder="Lat A" value="-18.8792">
-    <input id="startLon" type="number" step="any" placeholder="Lon A" value="47.5079">
+<button class="stop" onclick="stopTracking()">
+    STOP
+</button>
 
-    <input id="endLat" type="number" step="any" placeholder="Lat B" value="-18.8850">
-    <input id="endLon" type="number" step="any" placeholder="Lon B" value="47.5150">
-
-    <br><br>
-
-    <button class="create-btn" onclick="createRoute()">
-        Créer Route
-    </button>
-
-    <button class="start-btn" onclick="startGPS()">
-        START GPS RÉEL
-    </button>
-
-    <button class="stop-btn" onclick="stopGPS()">
-        STOP
-    </button>
-
-    <div class="status" id="status">
-        Statut : idle
-    </div>
+<div class="status" id="status">Idle</div>
+<div id="timer">00:00</div>
 
 </div>
 
 <div class="card">
-
-    <h2>Logs</h2>
-    <div id="logs"></div>
-
+<h2>Logs</h2>
+<div id="logs"></div>
 </div>
 
 <script>
 
-let routeId = null;
 let sessionId = null;
 let watchId = null;
-let isTracking = false;
+let timerInterval = null;
+let startTime = null;
+let isRunning = false;
 
 // ---------------- LOGS ----------------
 
@@ -132,131 +90,136 @@ function log(msg) {
 }
 
 function setStatus(s) {
-    document.getElementById("status").innerText = "Statut : " + s;
+    document.getElementById("status").innerText = s;
 }
 
-// ---------------- ROUTE ----------------
+// ---------------- TIMER ----------------
 
-function generateRoute(startLat, startLon, endLat, endLon, steps = 30) {
+function startTimer() {
 
-    let points = [];
+    startTime = Date.now();
 
-    for (let i = 0; i <= steps; i++) {
+    timerInterval = setInterval(() => {
 
-        const t = i / steps;
+        let diff = Date.now() - startTime;
 
-        points.push({
-            latitude: startLat + (endLat - startLat) * t,
-            longitude: startLon + (endLon - startLon) * t
-        });
-    }
+        let sec = Math.floor(diff / 1000);
+        let min = Math.floor(sec / 60);
 
-    return points;
+        sec = sec % 60;
+
+        document.getElementById("timer").innerText =
+            `${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+
+    }, 1000);
 }
 
-async function createRoute() {
+function stopTimer() {
+    clearInterval(timerInterval);
+}
 
-    const startLat = parseFloat(document.getElementById("startLat").value);
-    const startLon = parseFloat(document.getElementById("startLon").value);
-    const endLat = parseFloat(document.getElementById("endLat").value);
-    const endLon = parseFloat(document.getElementById("endLon").value);
+// ---------------- START ----------------
 
-    const route = generateRoute(startLat, startLon, endLat, endLon);
+async function startTracking() {
 
-    const res = await fetch("/routes/create", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-            user_id: "anna",
-            route_name: "test route",
-            points: route
-        })
-    });
+    if (isRunning) return;
+
+    setStatus("Starting GPS...");
+    log("START pressed");
+
+    const res = await fetch(
+        "https://backback-3-5xe2.onrender.com/routes/create",
+        {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                user_id: "anna",
+                route_name: "LIVE TRACK",
+                points: []
+            })
+        }
+    );
 
     const data = await res.json();
+    sessionId = data.route_id;
 
-    routeId = data.route_id;
+    log("Session created: " + sessionId);
 
-    log("Route créée");
-    setStatus("route OK");
-}
+    await fetch(
+        `https://backback-3-5xe2.onrender.com/tracking/start/${sessionId}`,
+        {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                user_id: "anna",
+                latitude: 0,
+                longitude: 0
+            })
+        }
+    );
 
-// ---------------- GPS RÉEL ----------------
+    isRunning = true;
+    setStatus("Tracking LIVE");
 
-async function startGPS() {
-
-    if (!routeId) {
-        log("Crée une route d'abord");
-        return;
-    }
-
-    const res = await fetch(`/tracking/start/${routeId}`, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-            user_id: "anna",
-            latitude: 0,
-            longitude: 0
-        })
-    });
-
-    const data = await res.json();
-
-    sessionId = data.session_id;
-    isTracking = true;
-
-    log("GPS START");
-    setStatus("tracking live");
+    startTimer();
 
     watchId = navigator.geolocation.watchPosition(
-        sendGPS,
+        sendPosition,
         err => log("GPS error: " + err.message),
         {
             enableHighAccuracy: true,
-            maximumAge: 1000,
-            timeout: 5000
+            maximumAge: 1000
         }
     );
 }
 
-async function sendGPS(position) {
+// ---------------- SEND POSITION ----------------
 
-    if (!isTracking) return;
+async function sendPosition(pos) {
 
-    const lat = position.coords.latitude;
-    const lon = position.coords.longitude;
+    if (!isRunning) return;
 
-    const res = await fetch(`/tracking/update/${sessionId}`, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-            user_id: "anna",
-            latitude: lat,
-            longitude: lon
-        })
-    });
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+
+    const res = await fetch(
+        `https://backback-3-5xe2.onrender.com/tracking/update/${sessionId}`,
+        {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                user_id: "anna",
+                latitude: lat,
+                longitude: lon
+            })
+        }
+    );
 
     const data = await res.json();
 
-    log(`GPS: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
-    log(`Distance: ${data.distance_from_route} m`);
+    log(`GPS ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
+    log(`Distance route: ${data.distance_from_route} m`);
 
     if (data.alert) {
         log("🚨 " + data.alert);
-        setStatus("ALERTE");
+        setStatus("ALERT");
     }
 }
 
-function stopGPS() {
+// ---------------- STOP ----------------
 
-    isTracking = false;
+function stopTracking() {
+
+    isRunning = false;
 
     if (watchId) {
         navigator.geolocation.clearWatch(watchId);
     }
 
-    setStatus("stopped");
-    log("GPS STOP");
+    stopTimer();
+
+    setStatus("Stopped");
+    log("STOP pressed");
 }
 
 </script>
